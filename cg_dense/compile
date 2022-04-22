@@ -1,0 +1,1 @@
+gcc main.c utils.c cg_dense.c -I. -o main
