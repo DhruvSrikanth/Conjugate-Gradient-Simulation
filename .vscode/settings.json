@@ -4,6 +4,8 @@
         "ostream": "cpp",
         "new": "cpp",
         "iostream": "cpp",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "__locale": "cpp",
+        "random": "cpp"
     }
 }

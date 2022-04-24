@@ -75,20 +75,26 @@ void fill_b(double* b, int const& N) {
     }
 }
 
-double* axpy(double const& a, double* const& x, int const& b, double* const& y, int const& N) {
+void axpy(double* res, double const& a, double* const& x, int const& b, double* const& y, int const& N) {
     // Perform res = a * x + b * y
-    double* res = new double[N];
-    for (int i = 0; i < N; i++) {
-        res[i] = a * x[i] + b * y[i];
+    int n = sqrt(N);
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            int idx = i*n + j;
+            res[idx] = a * x[idx] + b * y[idx];
+        }
     }
-    return res;
 }
 
 double dot(double* const& x, double* const& y, int const& N) {
     // Perform res = x * y
+    int n = sqrt(N);
     double res = 0.0;
-    for (int i = 0; i < N; i++) {
-        res += x[i] * y[i];
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            int idx = i*n + j;
+            res += x[idx] * y[idx];
+        }
     }
     return res;
 }
@@ -103,67 +109,58 @@ double* poisson_on_the_fly(double* const& w, int const& N) {
     double* res = new double[N];
 
     for (int i = 0; i < N; i++) {
-        t3 = w[i];
+        t3 = 4*w[i];
 
         if (i < n) {
             t1 = 0.0;
-        } 
-        else {
+        } else {
             t1 = w[i - n];
         }
 
         if (i < 1) {
             t2 = 0.0;
-        } 
-        else {
+        } else {
             t2 = w[i - 1];
         }
 
         if (i >= N - 1) {
             t4 = 0.0;
-        } 
-        else {
+        } else {
             t4 = w[i + 1];
         }
 
         if (i >= N - n) {
             t5 = 0.0;
-        } 
-        else {
+        } else {
             t5 = w[i + n];
         }
 
-        res[i] = 4*t3 - t1 - t2 - t4 - t5;
+        res[i] = t3 - t1 - t2 - t4 - t5;
     }
 
     return res;
 }
 
-double* conjugate_gradient(double* const& b, int const& n) {
+void conjugate_gradient(double* const& b, double* x, int const& n) {
     // Initialize variables
     int N = n * n;
+    // Tolerance for the solution to stop after convergence
+    double tol = 1e-10;
 
     // Write RHS to file
     write_to_file(b, "./output/b.txt", 0, N);
 
-    // Allocated memory for the following arrays follow a column major order
-    double* x = new double[N];
     double* r = new double[N];
-    double* p = new double[N];
-    double* z = new double[N];
-
-    double alpha;
-    double rsnew;
-
-    // Tolerance for the solution to stop after convergence
-    double tol = 1e-10;
-
-    // r = b - Ax
+    // r = -Ax + b
     double* Ax = poisson_on_the_fly(x, N);
-    r = axpy(1, b, -1, Ax, N);
-    
+    axpy(r, -1.0, Ax, 1.0, b, N);
+
+
+    double* p = new double[N];
     // p = r
-    copy(r, r + N, p);
+    copy(r, r + N*sizeof(double), p);
+    
+    double* z = new double[N];    
 
     // rsold = rT * r
     double rsold = dot(r, r, N);
@@ -178,27 +175,27 @@ double* conjugate_gradient(double* const& b, int const& n) {
         z = poisson_on_the_fly(p, N);
 
         // alpha = rsold / (p*z)
-        alpha = rsold / dot(p, z, N);
+        double alpha = rsold / dot(p, z, N);
 
         // x = x + alpha*p
-        x = axpy(1, x, alpha, p, N);
+        axpy(x, 1.0, x, alpha, p, N);
         
 
         // r = r - alpha*z
-        r = axpy(1, r, -alpha, z, N);
+        axpy(r, 1.0, r, -alpha, z, N);
 
         // rsnew = rT*r
-        rsnew = dot(r, r, N);
+        double rsnew = dot(r, r, N);
 
         // If the residual is small enough, stop
-        if (sqrt(rsnew) < tol) {
+        if (sqrt(rsnew) <= tol) {
+            cout << "Converged after " << i << " iterations" << endl;
             break;
         }
 
         // p = r + rsnew / rsold * p
-        p = axpy(1, r, rsnew / rsold, p, N);
+        axpy(p, 1.0, r, rsnew/rsold, p, N);
 
-        // rsold = rsnew
         rsold = rsnew;
 
         // Stop timer
@@ -207,12 +204,17 @@ double* conjugate_gradient(double* const& b, int const& n) {
         // Print time taken
         auto duration = duration_cast<microseconds>(te - ts);
         cout << "Iteration: " << i << " - Grind Rate: " << int(1/(1e-6*duration.count())) << " iter/sec" << endl;
+
+        // if (i % 100 == 0) {
+        //     // Write solution to file
+        //     char filename[100];
+        //     int dummy_var = sprintf(filename, "./output/output_x_%d.txt", i);
+        //     write_to_file(x, filename, i, N);
+        // }
     }
 
     // Write solution to file
     write_to_file(x, "./output/x.txt", N, N);
-
-    return x;
 }
 
 int main(int argc, char** argv) {
@@ -235,7 +237,7 @@ int main(int argc, char** argv) {
     auto s = high_resolution_clock::now();
 
     // Run simulation
-    x = conjugate_gradient(b, n);
+    conjugate_gradient(b, x, n);
 
     // Stop timer
     auto e = high_resolution_clock::now();
