@@ -158,7 +158,9 @@ void conjugate_gradient(double* const& b, double* x, int const& n) {
 
     double* p = new double[N];
     // p = r
-    copy(r, r + N*sizeof(double), p);
+    for (int i = 0; i < N; i++) {
+        p[i] = r[i];
+    }
     
     double* z = new double[N];    
 
@@ -228,6 +230,9 @@ int main(int argc, char** argv) {
 
     // Result vector
     double* x = new double[N];
+    for (int i = 0; i < N; i++) {
+        x[i] = 0.0;
+    }
 
     cout << "Simulation Parameters:" << endl;
     cout << "n = " << n << "\n" << endl;

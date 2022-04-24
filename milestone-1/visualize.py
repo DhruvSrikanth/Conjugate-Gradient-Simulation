@@ -21,6 +21,7 @@ def generate_plots(filename):
     Plot and save the data.
     '''
     n_iter, data = read_file(filename)
+    plt.clf()
     plt.imshow(data)
     plt.xlabel('X')
     plt.ylabel('Y')

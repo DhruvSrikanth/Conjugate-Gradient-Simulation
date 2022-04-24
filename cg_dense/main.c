@@ -2,7 +2,7 @@
 
 int main(int argc, char* argv[]){
   // n is the physical domain size;
-  int n = 100;
+  int n = 75;
   printf("Solving Poisson Equation on %d x %d domain...\n", n, n);
   // Dimension of operator matrix and vectors is n^2
   int N = n*n;
