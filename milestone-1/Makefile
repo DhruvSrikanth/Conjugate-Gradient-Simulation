@@ -7,7 +7,7 @@ VISUALIZE = "false"
 SANITY_CHECK = "false"
 
 # Input to cpp
-n = 3
+n = 75
 
 # Run sequence
 TARGETS = sanity_check simulation visualize clean_runtime

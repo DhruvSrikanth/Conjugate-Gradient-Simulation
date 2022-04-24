@@ -2,7 +2,7 @@ import numpy as np
 
 def conjugate_gradient(A, b, n):
     '''
-    Serial conjugate gradient solver.
+    Serial conjugate gradient solver (Dense Matrices).
     Input: 
         A - nxn numpy array (variable coefficients)
         b - nx1 numpy array (y-intercept)

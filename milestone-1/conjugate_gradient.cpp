@@ -5,48 +5,116 @@ using namespace std;
 using namespace std;
 
 #include <algorithm>
+#include <math.h>
+#include<assert.h>
+#include <fstream>
 
 #include <chrono>
 using namespace std::chrono;
 
-int contiguous_memory_index(int const& i, int const& j, int const& num_cols) {
-    // Calculate the index of the contiguous memory matrix
-    return j + (num_cols * i);
+double find_b(int i, int j, int n) {
+    double delta = 1.0 / double(n);
+
+    double x = -0.5 + delta + delta * j;
+    double y = -0.5 + delta + delta * i;
+
+    // Check if within a circle
+    double radius = 0.1;
+    if ( x*x + y*y < radius*radius ) {
+        return delta * delta / 1.075271758e-02;
+    }
+    else {
+        return 0.0;
+    }
 }
 
-double* contiguous_memory_alloc(int const& n_rows, int const& n_cols) {
-    // Allocate contiguous memory for the matrix
-    double* mat = new double[n_rows * n_cols];
-    // Initialize the matrix
-    for (int i = 0; i < n_rows; i++) {
-        for (int j = 0; j < n_cols; j++) {
-            mat[contiguous_memory_index(i, j, n_cols)] = 0.0;
+double* fill_b(int const& N) {
+    double* res = new double[N];
+
+    int n = sqrt(N);
+    for(int i = 0; i < n; i++) {
+        for(int j = 0; j < n; j++ ) {
+            res[i*n + j] = find_b(i,j,n);
         }
     }
-    return mat;
+
+    return res;
 }
 
-double* axpy(double const& a, double const* x, int const& b, double* y, int const& N) {
+double* axpy(double const& a, double* const& x, int const& b, double* const& y, int const& N) {
     // Perform res = a * x + b * y
+    double* res = new double[N];
+    for (int i = 0; i < N; i++) {
+        res[i] = a * x[i] + b * y[i];
+    }
+    return res;
 }
 
-double dot(double const* x, double* y, int const& N) {
+double dot(double* const& x, double* const& y, int const& N) {
     // Perform res = x * y
+    double res = 0.0;
+    for (int i = 0; i < N; i++) {
+        res += x[i] * y[i];
+    }
+    return res;
 }
 
-double* mat_vec_mult(double const* A, double const* x, int const& N) {
-    // Perform res = A * x
+double* poisson_on_the_fly(double* const& w, int const& N) {
+    double t1 = 0.0;
+    double t2 = 0.0;
+    double t3 = 0.0;
+    double t4 = 0.0;
+    double t5 = 0.0;
+    int n = sqrt(N);
+    double* res = new double[N];
+
+    for (int i = 0; i < N; i++) {
+        t3 = w[i];
+
+        if (i < n) {
+            t1 = 0.0;
+        } 
+        else {
+            t1 = w[i - n];
+        }
+
+        if (i < 1) {
+            t2 = 0.0;
+        } 
+        else {
+            t2 = w[i - 1];
+        }
+
+        if (i >= N - 1) {
+            t4 = 0.0;
+        } 
+        else {
+            t4 = w[i + 1];
+        }
+
+        if (i >= N - n) {
+            t5 = 0.0;
+        } 
+        else {
+            t5 = w[i + n];
+        }
+
+        res[i] = 4*t3 - t1 - t2 - t4 - t5;
+    }
+
+    return res;
 }
 
-double* conjugate_gradient(double* const& A, double* const& b, int const& n) {
+double* conjugate_gradient(double* const& b, int const& n) {
+
     // Initialize variables
     int N = n * n;
 
     // Allocated memory for the following arrays follow a column major order
-    double* x = contiguous_memory_alloc(N, 1); 
-    double* r = contiguous_memory_alloc(N, 1);
-    double* p = contiguous_memory_alloc(N, 1);
-    double* z = contiguous_memory_alloc(N, 1);
+    double* x = new double[N];
+    double* r = new double[N];
+    double* p = new double[N];
+    double* z = new double[N];
 
     double alpha;
     double rsnew;
@@ -55,72 +123,85 @@ double* conjugate_gradient(double* const& A, double* const& b, int const& n) {
     double tol = 1e-10;
 
     // r = b - Ax
-    double* Ax = mat_vec_mult(A, x, N);
+    double* Ax = poisson_on_the_fly(x, N);
     r = axpy(1, b, -1, Ax, N);
-
+    
     // p = r
-    p = copy(r, r+N, p);
+    copy(r, r + N, p);
 
     // rsold = rT * r
     double rsold = dot(r, r, N);
 
     // Run simulation loop
     for (int i = 0; i < N; i++) {
+
+        // Start timer
+        auto ts = high_resolution_clock::now();
+
         // z = A*p
-        z = mat_vec_mult(A, p, N);
+        z = poisson_on_the_fly(p, N);
 
         // alpha = rsold / (p*z)
         alpha = rsold / dot(p, z, N);
 
         // x = x + alpha*p
         x = axpy(1, x, alpha, p, N);
+        
 
         // r = r - alpha*z
         r = axpy(1, r, -alpha, z, N);
-        
+
         // rsnew = rT*r
         rsnew = dot(r, r, N);
 
         // If the residual is small enough, stop
-        if (rsnew < tol) {
+        if (sqrt(rsnew) < tol) {
             break;
         }
-        
+
         // p = r + rsnew / rsold * p
         p = axpy(1, r, rsnew / rsold, p, N);
 
         // rsold = rsnew
         rsold = rsnew;
+
+        // Stop timer
+        auto te = high_resolution_clock::now();
+
+        // Print time taken
+        auto duration = duration_cast<microseconds>(te - ts);
+        cout << "Iteration: " << i << " - Grind Rate: " << int(1/(1e-6*duration.count())) << " iter/sec" << endl;
     }
 
     return x;
-
 }
 
 int main(int argc, char** argv) {
 
     // Initialize variables
     int n = stoi(argv[1]);
+    int N = n * n;
 
-    double* A = contiguous_memory_alloc(n*n, n*n);
-    double* b = contiguous_memory_alloc(n*n, 1);
+    double* b = fill_b(N);
+
+    // Result vector
+    double* x = new double[N];
 
     cout << "Simulation Parameters:" << endl;
     cout << "n = " << n << "\n" << endl;
-
-    // Esimate memory usage
-    cout << "Estimated memeory usage = " << n*n*n*n*sizeof(double)/1e6 << " MB" << "\n" << endl;
+    cout << "Estimated memeory usage = " << N*sizeof(double)/1e6 << " MB" << "\n" << endl;
 
     // Start timer
-    auto t1 = high_resolution_clock::now();
+    auto s = high_resolution_clock::now();
 
     // Run simulation
-    double* x = conjugate_gradient(A, b, n);
-    cout << "x = " << x << "\n" << endl;
+    x = conjugate_gradient(b, n);
 
     // Stop timer
-    auto t2 = high_resolution_clock::now();
+    auto e = high_resolution_clock::now();
 
     // Print time taken
-    cout << "Time taken = " << 1e6*(duration_cast<microseconds>(t2 - t1)).count() << " seconds" << "\n" << endl;
+    auto duration = duration_cast<microseconds>(e - s);
+    cout << "\nTime taken = " << 1e-6*duration.count() << " seconds" << endl;
+
 }
