@@ -7,8 +7,6 @@ The purpose of milestone-1 in project 2 is to develop a serial solver for linear
 ## Run Instructions:
 To run the conjugate gradient solver written in C++, follow these steps.
 
-Run the 
-
 1. Enter the correct directory - 
 ```
 cd milestone-1
