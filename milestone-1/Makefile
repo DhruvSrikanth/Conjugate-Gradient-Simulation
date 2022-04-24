@@ -3,17 +3,18 @@ PYTHON = python3
 GCC = g++-11
 
 # Checks
-VISUALIZE = "false"
+VISUALIZE = "true"
 SANITY_CHECK = "false"
 
 # Input to cpp
 n = 75
 
 # Run sequence
-TARGETS = sanity_check simulation visualize clean_runtime
+TARGETS = output sanity_check simulation visualize clean_runtime
 
 # Run the following
 target: $(TARGETS)
+
 
 # Sanity check
 sanity_check:
@@ -22,6 +23,9 @@ ifeq ($(SANITY_CHECK), "true")
 	$(PYTHON) ./conjugate_gradient.py
 	@echo "\n"
 endif
+
+output:
+	mkdir output
 
 # Compile the following
 conjugate_gradient.o: ./conjugate_gradient.cpp
@@ -52,8 +56,10 @@ clean_runtime:
 	rm *.o conjugate_gradient
 	rm .DS_Store
 
+clean_text:
+	@echo "Cleaning text files...\n"
+	rm ./output/*.txt
+
 clean_output:
 	@echo "Cleaning output files...\n"
-	rm -rf ./output/
-
-clean_all: clean_runtime clean_output
+	rm -rf ./output

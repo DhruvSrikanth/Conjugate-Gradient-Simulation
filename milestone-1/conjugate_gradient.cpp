@@ -12,6 +12,44 @@ using namespace std;
 #include <chrono>
 using namespace std::chrono;
 
+
+void write_to_file(double* result, string const& filename, int const& n_iter, int const& N) { 
+    // Allocate memory for the file
+    ofstream file;
+    file.open(filename);
+
+    // Compute dimensions of the 1D array to represent as 2D array
+    int n = sqrt(N);
+
+    // Write the timestep to the file
+    file << "[" << n_iter << "], ";
+
+    // Write the data to the file
+    file << "[";
+    for (int i = 0; i < n; i++) {
+        if (i == 0) {
+            file << "[";
+        } 
+        else {
+            file << ", [";
+        }
+        for (int j = 0; j < n; j++) {
+            double res = result[i*n + j];
+            if (j == N - 1) {
+                file << res;
+            } 
+            else {
+                file << res << ", ";
+            }
+        }
+        file << "]";
+    }
+    file << "]";
+
+    // Release the memory for the file
+    file.close();
+}
+
 double find_b(int i, int j, int n) {
     double delta = 1.0 / double(n);
 
@@ -28,17 +66,13 @@ double find_b(int i, int j, int n) {
     }
 }
 
-double* fill_b(int const& N) {
-    double* res = new double[N];
-
+void fill_b(double* b, int const& N) {
     int n = sqrt(N);
     for(int i = 0; i < n; i++) {
         for(int j = 0; j < n; j++ ) {
-            res[i*n + j] = find_b(i,j,n);
+            b[i*n + j] = find_b(i,j,n);
         }
     }
-
-    return res;
 }
 
 double* axpy(double const& a, double* const& x, int const& b, double* const& y, int const& N) {
@@ -106,9 +140,11 @@ double* poisson_on_the_fly(double* const& w, int const& N) {
 }
 
 double* conjugate_gradient(double* const& b, int const& n) {
-
     // Initialize variables
     int N = n * n;
+
+    // Write RHS to file
+    write_to_file(b, "./output/b.txt", 0, N);
 
     // Allocated memory for the following arrays follow a column major order
     double* x = new double[N];
@@ -173,6 +209,9 @@ double* conjugate_gradient(double* const& b, int const& n) {
         cout << "Iteration: " << i << " - Grind Rate: " << int(1/(1e-6*duration.count())) << " iter/sec" << endl;
     }
 
+    // Write solution to file
+    write_to_file(x, "./output/x.txt", N, N);
+
     return x;
 }
 
@@ -182,14 +221,15 @@ int main(int argc, char** argv) {
     int n = stoi(argv[1]);
     int N = n * n;
 
-    double* b = fill_b(N);
+    double* b = new double[N];
+    fill_b(b, N);
 
     // Result vector
     double* x = new double[N];
 
     cout << "Simulation Parameters:" << endl;
     cout << "n = " << n << "\n" << endl;
-    cout << "Estimated memeory usage = " << N*sizeof(double)/1e6 << " MB" << "\n" << endl;
+    cout << "Estimated memeory usage = " << 5*N*sizeof(double)/1e6 << " MB" << "\n" << endl;
 
     // Start timer
     auto s = high_resolution_clock::now();
