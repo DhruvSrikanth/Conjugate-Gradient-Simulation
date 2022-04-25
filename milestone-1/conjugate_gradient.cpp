@@ -1,17 +1,11 @@
-#include <stdio.h>
-using namespace std;
-
 #include <iostream>
 using namespace std;
 
-#include <algorithm>
 #include <math.h>
-#include<assert.h>
 #include <fstream>
 
 #include <chrono>
 using namespace std::chrono;
-
 
 void write_to_file(double* result, string const& filename, int const& n_iter, int const& N) { 
     // Allocate memory for the file
@@ -75,39 +69,22 @@ void fill_b(double* b, int const& N) {
     }
 }
 
-void axpy(double* res, double const& a, double* const& x, int const& b, double* const& y, int const& N) {
-    // Perform res = a * x + b * y
-    int n = sqrt(N);
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            int idx = i*n + j;
-            res[idx] = a * x[idx] + b * y[idx];
-        }
-    }
-}
-
-double dot(double* const& x, double* const& y, int const& N) {
+double dotp(double* const& x, double* const& y, int const& N) {
     // Perform res = x * y
-    int n = sqrt(N);
     double res = 0.0;
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            int idx = i*n + j;
-            res += x[idx] * y[idx];
-        }
+    for (int i = 0; i < N; i++) {
+        res += x[i] * y[i];
     }
     return res;
 }
 
-double* poisson_on_the_fly(double* const& w, int const& N) {
+void poisson_on_the_fly(double* v, double* const& w, int const& N) {
     double t1 = 0.0;
     double t2 = 0.0;
     double t3 = 0.0;
     double t4 = 0.0;
     double t5 = 0.0;
     int n = sqrt(N);
-    double* res = new double[N];
-
     for (int i = 0; i < N; i++) {
         t3 = 4*w[i];
 
@@ -135,15 +112,26 @@ double* poisson_on_the_fly(double* const& w, int const& N) {
             t5 = w[i + n];
         }
 
-        res[i] = t3 - t1 - t2 - t4 - t5;
+        v[i] = t3 - t1 - t2 - t4 - t5;
     }
+}
 
-    return res;
+void vec_scale(double* v, double const& alpha, int const& N) {
+    for (int i = 0; i < N; i++) {
+        v[i] *= alpha;
+    }
+}
+
+void vec_add(double* output, double* const& v1, double* const& v2, int const& op, int const& N) {
+    for (int i = 0; i < N; i++) {
+        output[i] = v1[i] + op * v2[i];
+    }
 }
 
 void conjugate_gradient(double* const& b, double* x, int const& n) {
     // Initialize variables
     int N = n * n;
+
     // Tolerance for the solution to stop after convergence
     double tol = 1e-10;
 
@@ -151,43 +139,47 @@ void conjugate_gradient(double* const& b, double* x, int const& n) {
     write_to_file(b, "./output/b.txt", 0, N);
 
     double* r = new double[N];
-    // r = -Ax + b
-    double* Ax = poisson_on_the_fly(x, N);
-    axpy(r, -1.0, Ax, 1.0, b, N);
-
-
     double* p = new double[N];
+    double* z = new double[N];
+
+    // Temporary variables
+    double* Ax = new double[N]; 
+
+    // r = b - Ax
+    poisson_on_the_fly(Ax, x, N);
+    vec_add(r, b, Ax, -1.0, N);
+
+    // Free Ax since we wont use it after this
+    free(Ax);
+
     // p = r
     for (int i = 0; i < N; i++) {
         p[i] = r[i];
     }
-    
-    double* z = new double[N];    
 
     // rsold = rT * r
-    double rsold = dot(r, r, N);
+    double rsold = dotp(r, r, N);
 
-    // Run simulation loop
-    for (int i = 0; i < N; i++) {
-
+    for (int i = 1; i < N + 1; i++) {
         // Start timer
         auto ts = high_resolution_clock::now();
 
         // z = A*p
-        z = poisson_on_the_fly(p, N);
+        poisson_on_the_fly(z, p, N);
 
         // alpha = rsold / (p*z)
-        double alpha = rsold / dot(p, z, N);
+        double alpha = rsold / dotp(p, z, N);
 
         // x = x + alpha*p
-        axpy(x, 1.0, x, alpha, p, N);
-        
+        vec_scale(p, alpha, N);
+        vec_add(x, x, p, 1.0, N);
 
         // r = r - alpha*z
-        axpy(r, 1.0, r, -alpha, z, N);
-
+        vec_scale(z, alpha, N);
+        vec_add(r, r, z, -1.0, N);
+        
         // rsnew = rT*r
-        double rsnew = dot(r, r, N);
+        double rsnew = dotp(r, r, N);
 
         // If the residual is small enough, stop
         if (sqrt(rsnew) <= tol) {
@@ -196,9 +188,8 @@ void conjugate_gradient(double* const& b, double* x, int const& n) {
         }
 
         // p = r + rsnew / rsold * p
-        axpy(p, 1.0, r, rsnew/rsold, p, N);
-
-        rsold = rsnew;
+        vec_scale(p, rsnew / rsold, N);
+        vec_add(p, r, p, 1.0, N);
 
         // Stop timer
         auto te = high_resolution_clock::now();
@@ -207,6 +198,7 @@ void conjugate_gradient(double* const& b, double* x, int const& n) {
         auto duration = duration_cast<microseconds>(te - ts);
         cout << "Iteration: " << i << " - Grind Rate: " << int(1/(1e-6*duration.count())) << " iter/sec" << endl;
 
+        // For generating a movie
         // if (i % 100 == 0) {
         //     // Write solution to file
         //     char filename[100];
@@ -214,13 +206,11 @@ void conjugate_gradient(double* const& b, double* x, int const& n) {
         //     write_to_file(x, filename, i, N);
         // }
     }
-
     // Write solution to file
     write_to_file(x, "./output/x.txt", N, N);
 }
 
 int main(int argc, char** argv) {
-
     // Initialize variables
     int n = stoi(argv[1]);
     int N = n * n;
@@ -250,5 +240,4 @@ int main(int argc, char** argv) {
     // Print time taken
     auto duration = duration_cast<microseconds>(e - s);
     cout << "\nTime taken = " << 1e-6*duration.count() << " seconds" << endl;
-
 }
