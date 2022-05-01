@@ -9,9 +9,10 @@ using namespace std::chrono;
 
 #include <mpi.h>
 
+// Dimension of node arrangement in the MPI grid
 #define DIMENSION 1
 
-void write_to_file(double* result, string const& filename, int const& n_iter, int const& N) { 
+void write_to_file(double *result, string filename, int n_iter, int N) { 
     // Allocate memory for the file
     ofstream file;
     file.open(filename);
@@ -48,65 +49,6 @@ void write_to_file(double* result, string const& filename, int const& n_iter, in
     file.close();
 }
 
-void collect_and_write(int const& mype, double* arr_to_send, int const& N_global, int const& nprocs, MPI_Comm const& comm1d, string const& filename, int const& n_iter) {
-    // write b out
-    int N_local = N_global / nprocs;
-    double* local_buffer = new double[N_local];
-    
-
-    if (mype == 0) {
-        write_to_file(arr_to_send, "./output/b_0.txt", 0, N_local);
-    }
-    for (int i = 0; i < N_local; i++) {
-        if (arr_to_send[i] != 0.0) {
-            cout << "arr_to_send[" << i << "] = " << arr_to_send[i] << endl;
-            cout << "mype = " << mype << endl;
-        }
-    }
-        
-
-    // For processor 0
-    if (mype == 0) {
-        // Processor 0's contribution to the global output
-        double* global_out = new double[N_global];
-        for (int i = 0; i < N_global; i++) {
-            global_out[i] = 0.0;
-        }
-        
-        int global_start = N_local * mype;
-        int local_i = 0;
-        for (int i = global_start; i < global_start + N_local; i++) {
-            local_i = i - global_start;
-            global_out[i] = arr_to_send[local_i];
-        }
-
-        // Every other processor's contribution to the global output
-        for (int x = 1; x < nprocs; x++) {
-            MPI_Recv(local_buffer, N_local, MPI_DOUBLE, x, 0, comm1d, MPI_STATUS_IGNORE);
-            for (int i = global_start; i < global_start + N_local; i++) {
-                local_i = i - global_start;
-                global_out[i] = local_buffer[local_i];
-            }
-        }
-        // Write RHS to file
-        write_to_file(global_out, filename, n_iter, N_global);
-        
-    }
-
-    // For other processors
-    else {
-        // Initialize local output as a contiguous array to send
-        double* send_buffer = new double[N_local];
-        int local_i = 0;
-        int global_start = N_local * mype;
-        for (int i = global_start; i < global_start + N_local; i++) {
-                local_i = i - global_start;
-                send_buffer[local_i] = arr_to_send[local_i];
-        }
-        MPI_Send(send_buffer, N_local, MPI_DOUBLE, 0, 0, comm1d);
-    }
-}
-
 double find_b(int i, int j, int n) {
     double delta = 1.0 / double(n);
 
@@ -123,34 +65,39 @@ double find_b(int i, int j, int n) {
     }
 }
 
-void fill_b(double* b, int const& N_local, int const& mype, int const& nprocs) {
-    int n = sqrt(N_local);
-    int N_global = N_local * nprocs;
-    // start - N/nprocs * mype
-    // end - N/nprocs * (mype + 1)
-    int global_start = N_local * mype;
-    int global_i = 0;
-    int global_j = 0;
+void fill_b(double *b, int N) {
+    int n = sqrt(N);
     for(int i = 0; i < n; i++) {
-        global_i = global_start + i;
         for(int j = 0; j < n; j++ ) {
-            global_j = j;
-            b[i*n + j] = find_b(global_i,global_j,n);
+            b[i*n + j] = find_b(i,j,n);
         }
     }
 }
 
-double dotp(double* const& x, double* const& y, int const& N) {
+void initialize_x(double *x, int N) {
+    for(int i = 0; i < N; i++) {
+        x[i] = 0.0;
+    }
+}
+
+double dotp(double *x, double *y, int N) {
     // Perform res = x * y
     double res = 0.0;
     for (int i = 0; i < N; i++) {
-        res += x[i] * y[i];
+        res += (x[i] * y[i]);
     }
     return res;
 }
 
-double* poisson_on_the_fly(double* const& w, int const& N) {
-    double* v = new double[N];
+void axpy(double *output, double alpha, double *v1, double beta, double *v2, int N) {
+    for (int i = 0; i < N; i++) {
+        v1[i] *= alpha;
+        v2[i] *= beta;
+        output[i] = v1[i] + v2[i];
+    }
+}
+
+void poisson_on_the_fly(double *v, double *w, int N) {
     double t1 = 0.0;
     double t2 = 0.0;
     double t3 = 0.0;
@@ -186,53 +133,28 @@ double* poisson_on_the_fly(double* const& w, int const& N) {
 
         v[i] = t3 - t1 - t2 - t4 - t5;
     }
-    return v;
 }
 
-void vec_scale(double* v, double const& alpha, int const& N) {
-    for (int i = 0; i < N; i++) {
-        v[i] *= alpha;
-    }
-}
-
-void vec_add(double* output, double* const& v1, double* const& v2, double const& op, int const& N) {
-    for (int i = 0; i < N; i++) {
-        output[i] = v1[i] + op * v2[i];
-    }
-}
-
-void axpy(double* output, double* const& v1, double const& a, double* const& v2, double const& b, int const& N) {
-    for (int i = 0; i < N; i++) {
-        output[i] = (a * v1[i]) + (b * v2[i]);
-    }
-}
-
-void conjugate_gradient(double* const& b, double* & x, int const& n, int const& mype, int const& nprocs, MPI_Comm const& comm1d) {
+void conjugate_gradient(double *b, double *x, int n) {
     // Initialize variables
     int N = n * n;
-    int N_local = N / nprocs;
 
     // Tolerance for the solution to stop after convergence
     double tol = 1e-10;
-    collect_and_write(mype, b, N, nprocs, comm1d, "./output/b.txt", 0);
-    
 
-    return ;
+    // Write RHS to file
+    write_to_file(b, "./output/b.txt", 0, N);
 
-    
-    double* r = new double[N];
-    double* p = new double[N];
-    double* z = new double[N];
+    double r[N];
+    double p[N];
+    double z[N];
 
     // Temporary variables
-    double* Ax = poisson_on_the_fly(x, N);
+    double Ax[N]; 
 
     // r = b - Ax
-    // vec_add(r, b, Ax, -1.0, N);
-    axpy(r, b, 1.0, Ax, -1.0, N);
-
-    // Free Ax since we wont use it after this
-    free(Ax);
+    poisson_on_the_fly(Ax, x, N);
+    axpy(r, 1.0, b, -1.0, Ax, N);
 
     // p = r
     for (int i = 0; i < N; i++) {
@@ -247,20 +169,16 @@ void conjugate_gradient(double* const& b, double* & x, int const& n, int const& 
         auto ts = high_resolution_clock::now();
 
         // z = A*p
-        z = poisson_on_the_fly(p, N);
+        poisson_on_the_fly(z, p, N);
 
         // alpha = rsold / (p*z)
         double alpha = rsold / dotp(p, z, N);
 
         // x = x + alpha*p
-        vec_scale(p, alpha, N);
-        vec_add(x, x, p, 1.0, N);
-        // axpy(x, x, 1.0, p, alpha, N);
+        axpy(x, 1.0, x, alpha, p, N);
 
         // r = r - alpha*z
-        // vec_scale(z, alpha, N);
-        // vec_add(r, r, z, -1.0, N);
-        axpy(r, r, 1.0, z, -1.0*alpha, N);
+        axpy(r, 1.0, r, -alpha, z, N);
         
         // rsnew = rT*r
         double rsnew = dotp(r, r, N);
@@ -272,9 +190,7 @@ void conjugate_gradient(double* const& b, double* & x, int const& n, int const& 
         }
 
         // p = r + rsnew / rsold * p
-        // vec_scale(p, rsnew / rsold, N);
-        // vec_add(p, r, p, 1.0, N);
-        axpy(p, r, 1.0, p, (double) rsnew/rsold, N);
+        axpy(p, 1.0, r, rsnew / rsold, p, N);
 
         // Stop timer
         auto te = high_resolution_clock::now();
@@ -303,7 +219,7 @@ int main(int argc, char** argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &mype);
 
-    // MPI Cartesian Grid Creation
+    // MPI Cartesian Grid Creation (1D)
     int dims[DIMENSION], periodic[DIMENSION], coords[DIMENSION];
     MPI_Comm comm1d;
     dims[0] = nprocs;
@@ -318,41 +234,35 @@ int main(int argc, char** argv) {
     // Determine 1D neighbor ranks for this MPI rank
     int left, right;
     MPI_Cart_shift(comm1d, 0, 1, &left, &right);
-    // cout << "Rank " << mype << " has left neighbor " << left << " and right neighbor " << right << endl;
-
+    cout << "Rank " << mype << " has left neighbor " << left << " and right neighbor " << right << endl;
 
     // Initialize variables
-    int n = stoi(argv[1]);
-    int N = n * n;
-    int N_local = N / nprocs;
+    int n_global = stoi(argv[1]);
+    int N_global = n_global * n_global;
+    int N_local = N_global / nprocs;
+    int n_local = sqrt(N_local);
 
-    double* b = new double[N_local];
-    fill_b(b, N_local, mype, nprocs);
-
-    for (int i = 0; i < N_local; i++) {
-        if (b[i] != 0.0) {
-            cout << "arr_to_send[" << i << "] = " << b[i] << endl;
-            cout << "mype = " << mype << endl;
-        }
-    }
-
+    // double b_local[N_local];
+    // fill_b(b_local, N_local);
+    // TODO: Switch to the above when fill_b is parallelized
+    double b_local[N_global];
+    fill_b(b_local, N_global); 
 
     // Result vector
-    double* x = new double[N_local];
+    double x_local[N_local];
+    initialize_x(x_local, N_local);
     
-    for (int i = 0; i < N_local; i++) {
-        x[i] = 0.0;
+    if (mype == 0) {
+        cout << "Simulation Parameters:" << endl;
+        cout << "n = " << n_global << "\n" << endl;
+        cout << "Estimated memeory usage = " << 5*N_global*sizeof(double)/1e6 << " MB" << "\n" << endl;
     }
-
-    cout << "Simulation Parameters:" << endl;
-    cout << "n = " << n << "\n" << endl;
-    cout << "Estimated memeory usage = " << 5*N*sizeof(double)/1e6 << " MB" << "\n" << endl;
-
+    
     // Start timer
     auto s = high_resolution_clock::now();
 
     // Run simulation
-    conjugate_gradient(b, x, n, mype, nprocs, comm1d);
+    conjugate_gradient(b_local, x_local, n_local);
 
     // Stop timer
     auto e = high_resolution_clock::now();
