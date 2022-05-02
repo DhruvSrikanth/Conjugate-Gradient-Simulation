@@ -89,6 +89,10 @@ void collect_and_write_array(double *arr_to_collect, string filename, int n_iter
     }
 }
 
+void collect_ghost_cells(){
+    // TODO: Implement this function
+}
+
 double find_b(int i, int j, int n) {
     double delta = 1.0 / double(n);
 
@@ -150,53 +154,63 @@ void axpy(double *output, double alpha, double *v1, double beta, double *v2, int
     }
 }
 
-void poisson_on_the_fly(double *v, double *w, int N) {
-    double t1 = 0.0;
-    double t2 = 0.0;
-    double t3 = 0.0;
-    double t4 = 0.0;
-    double t5 = 0.0;
+void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, MPI_Comm comm1d) {
+    int N_global = N * nprocs;
+    int n_global = sqrt(N_global);
     int n = sqrt(N);
+    int global_start_index = global_start(mype, N);;
+    int global_i;
     for (int i = 0; i < N; i++) {
+        double t1 = 0.0;
+        double t2 = 0.0;
+        double t3 = 0.0;
+        double t4 = 0.0;
+        double t5 = 0.0;
+        global_i = global_start_index + i;
         t3 = 4*w[i];
-
-        if (i < n) {
-            t1 = 0.0;
-        } else {
+        if (i - n >= 0) {
             t1 = w[i - n];
         }
-
-        if (i < 1) {
-            t2 = 0.0;
-        } else {
+        else if (global_i - n_global >= 0) {
+            // get ghost cell w[global_i - n_global]
+            t1 = ghost_cell;
+        }
+        if (i - 1 >= 0) {
             t2 = w[i - 1];
         }
-
-        if (i >= N - 1) {
-            t4 = 0.0;
-        } else {
+        else if (global_i - 1 >= 0) {
+            // get ghost cell w[global_i - 1]
+            t2 = ghost_cell;
+        }
+        if (i + 1 < N) {
             t4 = w[i + 1];
         }
-
-        if (i >= N - n) {
-            t5 = 0.0;
-        } else {
+        else if (global_i + 1 < N_global) {
+            // get ghost cell w[global_i + 1]
+            t4 = ghost_cell;
+        }
+        if (i + n < N) {
             t5 = w[i + n];
         }
-
+        else if (global_i + n_global < N_global) {
+            // get ghost cell w[global_i + n_global]
+            t5 = ghost_cell;
+        }
         v[i] = t3 - t1 - t2 - t4 - t5;
     }
 }
 
-void conjugate_gradient(double *b, double *x, int n) {
+void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, MPI_Comm comm1d) {
     // Initialize variables
     int N = n * n;
-
+    int N_global = N * nprocs;
+    
     // Tolerance for the solution to stop after convergence
     double tol = 1e-10;
 
     // Write RHS to file
-    write_to_file(b, "./output/b.txt", 0, N);
+    // write_to_file(b, "./output/b.txt", 0, N); // serial
+    collect_and_write_array(b, "./output/b.txt", 0, mype, N_global, nprocs, comm1d); // parallel
 
     double r[N];
     double p[N];
@@ -206,7 +220,7 @@ void conjugate_gradient(double *b, double *x, int n) {
     double Ax[N]; 
 
     // r = b - Ax
-    poisson_on_the_fly(Ax, x, N);
+    poisson_on_the_fly(Ax, x, N, mype, nprocs, comm1d); // needs to be parallelized
     axpy(r, 1.0, b, -1.0, Ax, N);
 
     // p = r
@@ -222,10 +236,10 @@ void conjugate_gradient(double *b, double *x, int n) {
         auto ts = high_resolution_clock::now();
 
         // z = A*p
-        poisson_on_the_fly(z, p, N);
+        poisson_on_the_fly(z, p, N, mype, nprocs, comm1d); // needs to be parallelized
 
         // alpha = rsold / (p*z)
-        double alpha = rsold / dotp(p, z, N);
+        double alpha = rsold / parallel_dotp(p, z, N, comm1d);
 
         // x = x + alpha*p
         axpy(x, 1.0, x, alpha, p, N);
@@ -233,8 +247,8 @@ void conjugate_gradient(double *b, double *x, int n) {
         // r = r - alpha*z
         axpy(r, 1.0, r, -alpha, z, N);
         
-        // rsnew = rT*r
-        double rsnew = dotp(r, r, N);
+        // rsnew = rT.r
+        double rsnew = parallel_dotp(r, r, N, comm1d);
 
         // If the residual is small enough, stop
         if (sqrt(rsnew) <= tol) {
@@ -251,17 +265,9 @@ void conjugate_gradient(double *b, double *x, int n) {
         // Print time taken
         auto duration = duration_cast<microseconds>(te - ts);
         cout << "Iteration: " << i << " - Grind Rate: " << int(1/(1e-6*duration.count())) << " iter/sec" << endl;
-
-        // For generating a movie
-        // if (i % 100 == 0) {
-        //     // Write solution to file
-        //     char filename[100];
-        //     int dummy_var = sprintf(filename, "./output/output_x_%d.txt", i);
-        //     write_to_file(x, filename, i, N);
-        // }
     }
     // Write solution to file
-    write_to_file(x, "./output/x.txt", N, N);
+    collect_and_write_array(x, "./output/x.txt", N-1, mype, N_global, nprocs, comm1d);
 }
 
 int main(int argc, char** argv) {
@@ -300,14 +306,10 @@ int main(int argc, char** argv) {
     int N_local = N_global / nprocs;
     int n_local = sqrt(N_local);
 
+    
+    // Source vector
     double b_local[N_local];
     fill_b(b_local, N_local, mype, nprocs);
-
-    // Save each processor's data to a file
-    // char filename[100];
-    // int dummy_var = sprintf(filename, "./output/mype_%d.txt", mype);
-    // write_to_file(b_local, filename, 0, N_local);
-
 
     // Result vector
     double x_local[N_local];
@@ -324,7 +326,7 @@ int main(int argc, char** argv) {
     auto s = high_resolution_clock::now();
 
     // Run simulation
-    // conjugate_gradient(b_local, x_local, n_local);
+    // conjugate_gradient(b_local, x_local, n_local, mype, nprocs, comm1d);
 
     // Stop timer
     auto e = high_resolution_clock::now();
