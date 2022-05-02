@@ -89,8 +89,10 @@ void collect_and_write_array(double *arr_to_collect, string filename, int n_iter
     }
 }
 
-void collect_ghost_cells(){
+double collect_ghost_cell(int idx, int n_global, int mype, int nprocs, MPI_Comm comm1d) {
     // TODO: Implement this function
+    double ghost_cell = 0;
+    return ghost_cell;
 }
 
 double find_b(int i, int j, int n) {
@@ -111,14 +113,10 @@ double find_b(int i, int j, int n) {
 
 void fill_b(double *b, int N, int mype, int nprocs) {
     // TODO: Fill the b array with the CORRECT values
-    int global_start_index = global_start(mype, N);
-    int global_i;
-    int global_j;
-    int n_global = sqrt(N * nprocs);
     int n = sqrt(N);
     for(int i = 0; i < n; i++) {
         for(int j = 0; j < n; j++ ) {
-            b[i*n + j] = find_b(global_i, global_j, n_global);
+            b[i*n + j] = find_b(i, j, n);
         }
     }
 }
@@ -173,28 +171,32 @@ void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, MPI_C
         }
         else if (global_i - n_global >= 0) {
             // get ghost cell w[global_i - n_global]
-            t1 = ghost_cell;
+            int idx = global_i - n_global;
+            t1 = collect_ghost_cells(idx, n_global, mype, nprocs, comm1d);
         }
         if (i - 1 >= 0) {
             t2 = w[i - 1];
         }
         else if (global_i - 1 >= 0) {
             // get ghost cell w[global_i - 1]
-            t2 = ghost_cell;
+            int idx = global_i - 1;
+            t2 = collect_ghost_cells(idx, n_global, mype, nprocs, comm1d);
         }
         if (i + 1 < N) {
             t4 = w[i + 1];
         }
         else if (global_i + 1 < N_global) {
             // get ghost cell w[global_i + 1]
-            t4 = ghost_cell;
+            int idx = global_i + 1;
+            t4 = collect_ghost_cells(idx, n_global, mype, nprocs, comm1d);
         }
         if (i + n < N) {
             t5 = w[i + n];
         }
         else if (global_i + n_global < N_global) {
             // get ghost cell w[global_i + n_global]
-            t5 = ghost_cell;
+            int idx = global_i + n_global;
+            t5 = collect_ghost_cells(idx, n_global, mype, nprocs, comm1d);
         }
         v[i] = t3 - t1 - t2 - t4 - t5;
     }
@@ -308,8 +310,15 @@ int main(int argc, char** argv) {
 
     
     // Source vector
+    double b_global[N_global];
+    fill_b(b_global, N_global, mype, nprocs);
+
     double b_local[N_local];
-    fill_b(b_local, N_local, mype, nprocs);
+    // fill_b(b_local, N_local, mype, nprocs);
+    for (int i = 0; i < N_local; i++) {
+        int global_i = global_start(mype, N_local) + i;
+        b_local[i] = b_global[global_i];
+    }
 
     // Result vector
     double x_local[N_local];
@@ -326,7 +335,7 @@ int main(int argc, char** argv) {
     auto s = high_resolution_clock::now();
 
     // Run simulation
-    // conjugate_gradient(b_local, x_local, n_local, mype, nprocs, comm1d);
+    conjugate_gradient(b_local, x_local, n_local, mype, nprocs, comm1d);
 
     // Stop timer
     auto e = high_resolution_clock::now();
