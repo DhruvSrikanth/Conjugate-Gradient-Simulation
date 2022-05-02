@@ -3,6 +3,7 @@ using namespace std;
 
 #include <math.h>
 #include <fstream>
+#include <assert.h>
 
 #include <chrono>
 using namespace std::chrono;
@@ -11,6 +12,10 @@ using namespace std::chrono;
 
 // Dimension of node arrangement in the MPI grid
 #define DIMENSION 1
+
+int global_start (int mype, int N_local) {
+    return mype * N_local;
+}
 
 void write_to_file(double *result, string filename, int n_iter, int N) { 
     // Allocate memory for the file
@@ -49,6 +54,41 @@ void write_to_file(double *result, string filename, int n_iter, int N) {
     file.close();
 }
 
+void collect_and_write_array(double *arr_to_collect, string filename, int n_iter, int mype, int N_global, int nprocs, MPI_Comm comm1d) {
+    int N_local = N_global / nprocs;
+
+    double local_buffer[N_local];
+
+    // For processor 0
+    if (mype == 0) {
+        // Processor 0's contribution to the global output
+        double global_out[N_global];
+        for (int i = 0; i < N_local; i++) {
+            global_out[i] = arr_to_collect[i];
+        }
+
+        // Every other processor's contribution to the global output
+        for (int proc = 1; proc < nprocs; proc++) {
+            MPI_Recv(local_buffer, N_local, MPI_DOUBLE, proc, 0, comm1d, MPI_STATUS_IGNORE);
+            int global_start_index = global_start(proc, N_local);
+            for (int i = 0; i < N_local; i++) {
+                global_out[global_start_index + i] = local_buffer[i];
+            }
+        }
+        // Write to file
+        write_to_file(global_out, filename, n_iter, N_global); 
+    }
+
+    // For other processors
+    else {
+        // send to processor 0
+        for (int i = 0; i < N_local; i++) {
+            local_buffer[i] = arr_to_collect[i];
+        }
+        MPI_Send(local_buffer, N_local, MPI_DOUBLE, 0, 0, comm1d);
+    }
+}
+
 double find_b(int i, int j, int n) {
     double delta = 1.0 / double(n);
 
@@ -65,11 +105,16 @@ double find_b(int i, int j, int n) {
     }
 }
 
-void fill_b(double *b, int N) {
+void fill_b(double *b, int N, int mype, int nprocs) {
+    // TODO: Fill the b array with the CORRECT values
+    int global_start_index = global_start(mype, N);
+    int global_i;
+    int global_j;
+    int n_global = sqrt(N * nprocs);
     int n = sqrt(N);
     for(int i = 0; i < n; i++) {
         for(int j = 0; j < n; j++ ) {
-            b[i*n + j] = find_b(i,j,n);
+            b[i*n + j] = find_b(global_i, global_j, n_global);
         }
     }
 }
@@ -87,6 +132,14 @@ double dotp(double *x, double *y, int N) {
         res += (x[i] * y[i]);
     }
     return res;
+}
+
+double parallel_dotp(double *x, double *y, int N, MPI_Comm comm1d) {
+    double global_dotp = 0.0;
+    double local_dotp = 0.0;
+    local_dotp = dotp(x, y, N);
+    MPI_Allreduce(&local_dotp, &global_dotp, 1, MPI_DOUBLE, MPI_SUM, comm1d);
+    return global_dotp;
 }
 
 void axpy(double *output, double alpha, double *v1, double beta, double *v2, int N) {
@@ -234,19 +287,27 @@ int main(int argc, char** argv) {
     // Determine 1D neighbor ranks for this MPI rank
     int left, right;
     MPI_Cart_shift(comm1d, 0, 1, &left, &right);
-    cout << "Rank " << mype << " has left neighbor " << left << " and right neighbor " << right << endl;
+    // cout << "Rank " << mype << " has left neighbor " << left << " and right neighbor " << right << endl;
 
     // Initialize variables
     int n_global = stoi(argv[1]);
+    string solver_type = argv[2];
+
+    // Check whether the physical domain can be divided evenly among the MPI ranks
+    assert(n_global % nprocs == 0);
+
     int N_global = n_global * n_global;
     int N_local = N_global / nprocs;
     int n_local = sqrt(N_local);
 
-    // double b_local[N_local];
-    // fill_b(b_local, N_local);
-    // TODO: Switch to the above when fill_b is parallelized
-    double b_local[N_global];
-    fill_b(b_local, N_global); 
+    double b_local[N_local];
+    fill_b(b_local, N_local, mype, nprocs);
+
+    // Save each processor's data to a file
+    // char filename[100];
+    // int dummy_var = sprintf(filename, "./output/mype_%d.txt", mype);
+    // write_to_file(b_local, filename, 0, N_local);
+
 
     // Result vector
     double x_local[N_local];
@@ -254,6 +315,7 @@ int main(int argc, char** argv) {
     
     if (mype == 0) {
         cout << "Simulation Parameters:" << endl;
+        cout << "Solver type = " << solver_type << endl;
         cout << "n = " << n_global << "\n" << endl;
         cout << "Estimated memeory usage = " << 5*N_global*sizeof(double)/1e6 << " MB" << "\n" << endl;
     }
@@ -262,15 +324,16 @@ int main(int argc, char** argv) {
     auto s = high_resolution_clock::now();
 
     // Run simulation
-    conjugate_gradient(b_local, x_local, n_local);
+    // conjugate_gradient(b_local, x_local, n_local);
 
     // Stop timer
     auto e = high_resolution_clock::now();
 
-    // MPI finalization
-    MPI_Finalize();
-
     // Print time taken
     auto duration = duration_cast<microseconds>(e - s);
     cout << "\nTime taken = " << 1e-6*duration.count() << " seconds" << endl;
+
+    // MPI finalization
+    MPI_Finalize();
+
 }

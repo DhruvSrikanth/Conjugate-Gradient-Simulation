@@ -2,16 +2,17 @@
 PYTHON = python3
 GCC = g++-11
 MPI = mpiexec
-NODES = 4
 
+# Configuration
+NODES = 2
+SOLVER_TYPE = "parallel"
 
+# Input to cpp
+n = 80
 
 # Checks
 VISUALIZE = "true"
 SANITY_CHECK = "false"
-
-# Input to cpp
-n = 75
 
 # Run sequence
 TARGETS = output sanity_check simulation visualize clean_runtime
@@ -39,7 +40,12 @@ conjugate_gradient: ./conjugate_gradient.cpp
 # Execute the following
 simulation: ./conjugate_gradient
 	@echo "Simulating...\n"
-	$(MPI) --bind-to none -np $(NODES) ./conjugate_gradient $(n)
+ifeq ($(SOLVER_TYPE), "serial")
+	$(MPI) --bind-to none -np 1 ./conjugate_gradient $(n) $(SOLVER_TYPE)
+else
+	$(MPI) --bind-to none -np $(NODES) ./conjugate_gradient $(n) $(SOLVER_TYPE)
+endif	
+	
 	@echo "\nSimulation Complete!\n"
 
 # Visualize simulation

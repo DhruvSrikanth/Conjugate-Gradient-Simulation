@@ -62,9 +62,10 @@ def generate_movie():
 if __name__ == '__main__':
     gen_mov = False
 
-    # generate_plots('./output/b_0.txt')
-    generate_plots('./output/b.txt')
-    generate_plots('./output/x.txt')
+    # generate_plots('./output/mype_0.txt')
+    # generate_plots('./output/mype_1.txt')
+    # generate_plots('./output/b.txt')
+    # generate_plots('./output/x.txt')
     
 
     if gen_mov:
