@@ -60,8 +60,7 @@ endif
 clean_runtime:
 	@echo "Cleaning runtime files...\n"
 	rm -rf __pycache__
-	rm *.o conjugate_gradient
-	rm .DS_Store
+	rm conjugate_gradient
 
 clean_text:
 	@echo "Cleaning text files...\n"

@@ -147,9 +147,9 @@ void fill_b(double *b, int N, int mype, int nprocs) {
     }
 }
 
-void initialize_x(double *x, int N) {
+void initialize_array(double *array, int N) {
     for(int i = 0; i < N; i++) {
-        x[i] = 0.0;
+        array[i] = 0.0;
     }
 }
 
@@ -184,23 +184,26 @@ void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, int l
     int n = sqrt(N);
     int global_start_index = global_start(mype, N);
     int global_i;
+
+    // ghost cells
+    double left_ghost_cells[N];
+    double right_ghost_cells[N];
+    if (p_flag) {
+        initialize_array(left_ghost_cells, N);
+        initialize_array(right_ghost_cells, N);
+        distribute_ghost_cells(w, left_ghost_cells, right_ghost_cells, N, left, right, comm1d);
+    }
+
     for (int i = 0; i < N; i++) {
+        // Terms to compute vector values "on the fly"
         double t1 = 0.0;
         double t2 = 0.0;
         double t3 = 0.0;
         double t4 = 0.0;
         double t5 = 0.0;
-        
-        double left_ghost_cells[N];
-        double right_ghost_cells[N];
-        if (p_flag) {
-            for (int j = 0; j < N; j++) {
-                left_ghost_cells[j] = 0.0;
-                right_ghost_cells[j] = 0.0;
-            }
-            distribute_ghost_cells(w, left_ghost_cells, right_ghost_cells, N, left, right, comm1d);
-        }
+
         global_i = global_start_index + i;
+
         t3 = 4*w[i];
         if (i - n >= 0) {
             t1 = w[i - n];
@@ -255,7 +258,7 @@ void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int l
     double Ax[N]; 
 
     // r = b - Ax
-    poisson_on_the_fly(Ax, x, N, mype, nprocs, left, right, comm1d, p_flag); // needs to be parallelized
+    poisson_on_the_fly(Ax, x, N, mype, nprocs, left, right, comm1d, p_flag);
     axpy(r, 1.0, b, -1.0, Ax, N);
 
     // p = r
@@ -271,7 +274,7 @@ void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int l
         auto ts = high_resolution_clock::now();
 
         // z = A*p
-        poisson_on_the_fly(z, p, N, mype, nprocs, left, right, comm1d, p_flag); // needs to be parallelized        
+        poisson_on_the_fly(z, p, N, mype, nprocs, left, right, comm1d, p_flag);      
 
         // alpha = rsold / (p*z)
         double alpha = rsold / parallel_dotp(p, z, N, comm1d);
@@ -317,7 +320,7 @@ int main(int argc, char** argv) {
     int dims[DIMENSION], periodic[DIMENSION], coords[DIMENSION];
     MPI_Comm comm1d;
     dims[0] = nprocs;
-    periodic[0] = 1;
+    periodic[0] = 0;
 
     // Create Cartesian Communicator
     MPI_Cart_create(MPI_COMM_WORLD, DIMENSION, dims, periodic, 1, &comm1d);
@@ -352,7 +355,7 @@ int main(int argc, char** argv) {
 
     // Result vector
     double x_local[N_local];
-    initialize_x(x_local, N_local);
+    initialize_array(x_local, N_local);
     
     if (mype == 0) {
         cout << "Simulation Parameters:" << endl;
@@ -372,7 +375,8 @@ int main(int argc, char** argv) {
 
     // Print time taken
     auto duration = duration_cast<microseconds>(e - s);
-    cout << "\nTime taken = " << 1e-6*duration.count() << " seconds" << endl;
+    // cout << "\nTime taken = " << 1e-6*duration.count() << " seconds" << endl;
+    // cout << "\nAverage Grind Rate = " << int(n_global*n_global/(1e-6*duration.count())) << " iter/sec" << endl;
 
     // MPI finalization
     MPI_Finalize();
