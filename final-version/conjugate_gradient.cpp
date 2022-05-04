@@ -178,7 +178,7 @@ void axpy(double *output, double alpha, double *v1, double beta, double *v2, int
     }
 }
 
-void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, int left, int right, MPI_Comm comm1d) {
+void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, int left, int right, MPI_Comm comm1d, bool p_flag) {
     int N_global = N * nprocs;
     int n_global = sqrt(N_global);
     int n = sqrt(N);
@@ -190,40 +190,43 @@ void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, int l
         double t3 = 0.0;
         double t4 = 0.0;
         double t5 = 0.0;
+        
         double left_ghost_cells[N];
         double right_ghost_cells[N];
-        for (int j = 0; j < N; j++) {
-            left_ghost_cells[j] = 0.0;
-            right_ghost_cells[j] = 0.0;
+        if (p_flag) {
+            for (int j = 0; j < N; j++) {
+                left_ghost_cells[j] = 0.0;
+                right_ghost_cells[j] = 0.0;
+            }
+            distribute_ghost_cells(w, left_ghost_cells, right_ghost_cells, N, left, right, comm1d);
         }
-        distribute_ghost_cells(w, left_ghost_cells, right_ghost_cells, N, left, right, comm1d);
         global_i = global_start_index + i;
         t3 = 4*w[i];
         if (i - n >= 0) {
             t1 = w[i - n];
         }
-        else if (global_i - n >= 0) {
+        else if (global_i - n >= 0 && p_flag) {
             // get ghost cell w[global_i - n_global]
             t1 = left_ghost_cells[N + i - n];
         }
         if (i - 1 >= 0) {
             t2 = w[i - 1];
         }
-        else if (global_i - 1 >= 0) {
+        else if (global_i - 1 >= 0 && p_flag) {
             // get ghost cell w[global_i - 1]
             t2 = left_ghost_cells[N + i - 1];
         }
         if (i + 1 < N) {
             t4 = w[i + 1];
         }
-        else if (global_i + 1 < N_global) {
+        else if (global_i + 1 < N_global && p_flag) {
             // get ghost cell w[global_i + 1]
             t4 = right_ghost_cells[i + 1 - N];
         }
         if (i + n < N) {
             t5 = w[i + n];
         }
-        else if (global_i + n < N_global) {
+        else if (global_i + n < N_global && p_flag) {
             // get ghost cell w[global_i + n_global]
             t5 = right_ghost_cells[i + n - N];
         }
@@ -231,7 +234,7 @@ void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, int l
     }
 }
 
-void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int left, int right, MPI_Comm comm1d) {
+void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int left, int right, MPI_Comm comm1d, bool p_flag) {
     // Initialize variables
     int N = n * n;
     int N_global = N * nprocs;
@@ -252,7 +255,7 @@ void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int l
     double Ax[N]; 
 
     // r = b - Ax
-    poisson_on_the_fly(Ax, x, N, mype, nprocs, left, right, comm1d); // needs to be parallelized
+    poisson_on_the_fly(Ax, x, N, mype, nprocs, left, right, comm1d, p_flag); // needs to be parallelized
     axpy(r, 1.0, b, -1.0, Ax, N);
 
     // p = r
@@ -268,7 +271,7 @@ void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int l
         auto ts = high_resolution_clock::now();
 
         // z = A*p
-        poisson_on_the_fly(z, p, N, mype, nprocs, left, right, comm1d); // needs to be parallelized        
+        poisson_on_the_fly(z, p, N, mype, nprocs, left, right, comm1d, p_flag); // needs to be parallelized        
 
         // alpha = rsold / (p*z)
         double alpha = rsold / parallel_dotp(p, z, N, comm1d);
@@ -330,6 +333,10 @@ int main(int argc, char** argv) {
     // Initialize variables
     int n_global = stoi(argv[1]);
     string solver_type = argv[2];
+    bool p_flag = false;
+    if (solver_type == "parallel"){
+        p_flag = true;
+    }
 
     // Check whether the physical domain can be divided evenly among the MPI ranks
     assert(n_global % nprocs == 0);
@@ -358,7 +365,7 @@ int main(int argc, char** argv) {
     auto s = high_resolution_clock::now();
 
     // Run simulation
-    conjugate_gradient(b_local, x_local, n_local, mype, nprocs, left, right, comm1d);
+    conjugate_gradient(b_local, x_local, n_local, mype, nprocs, left, right, comm1d, p_flag);
 
     // Stop timer
     auto e = high_resolution_clock::now();
