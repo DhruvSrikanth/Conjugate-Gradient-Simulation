@@ -10,29 +10,6 @@ using namespace std::chrono;
 // Dimension of node arrangement in the MPI grid
 #define DIMENSION 1
 
-bool check_array_elements(double *array, int N) {
-    for (int i = 0; i < N; i++) {
-        // char element[100];
-        // int dummy_var = sprintf(element, "%s", array[i]);
-        // cout << element << " ";
-        // if (element ==  "(null)") {
-        //     cout << "NaN detected at index " << i << endl;
-        //     return false;
-        // }
-
-        if (!array[i]) {
-            cout << "NaN detected at index " << i << endl;
-            return false;
-        } else {
-            cout << "not nan" << endl;
-            cout << "arr[i]: " << array[i] << endl;
-        }
-
-        // cout << "arr[i]: " << array[i] << endl;
-    }
-    return true;
-}
-
 int global_start (int proc, int N_local) {
     return proc * N_local;
 }
@@ -294,6 +271,15 @@ void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int l
         // Stop timer
         auto te = high_resolution_clock::now();
 
+        // For generating a movie
+        // if (i % 100 == 0) {
+        //     // Write solution to file
+        //     char filename[100];
+        //     int dummy_var = sprintf(filename, "./output/output_x_%d.txt", i);
+        //     // write_to_file(x, filename, i, N);
+        //     collect_and_write_array(x, filename, i, mype, N_global, nprocs, comm1d);
+        // }
+
         // Print time taken
         auto duration = duration_cast<microseconds>(te - ts);
         cout << "Iteration: " << i << " - Grind Rate: " << int(1/(1e-6*duration.count())) << " iter/sec" << endl;
@@ -375,8 +361,7 @@ int main(int argc, char** argv) {
 
     // Print time taken
     auto duration = duration_cast<microseconds>(e - s);
-    // cout << "\nTime taken = " << 1e-6*duration.count() << " seconds" << endl;
-    // cout << "\nAverage Grind Rate = " << int(n_global*n_global/(1e-6*duration.count())) << " iter/sec" << endl;
+    cout << "\nTime taken = " << 1e-6*duration.count() << " seconds" << endl;
 
     // MPI finalization
     MPI_Finalize();
