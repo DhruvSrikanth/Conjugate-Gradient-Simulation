@@ -64,6 +64,8 @@ if __name__ == '__main__':
 
     # generate_plots('./output/mype_0.txt')
     # generate_plots('./output/mype_1.txt')
+    # generate_plots('./output/mype_2.txt')
+    # generate_plots('./output/mype_3.txt')
     generate_plots('./output/b.txt')
     generate_plots('./output/x.txt')
     

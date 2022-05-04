@@ -263,7 +263,7 @@ void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int l
     // rsold = rT * r
     double rsold = parallel_dotp(r, r, N, comm1d);
 
-    for (int i = 1; i < N + 1; i++) {
+    for (int i = 1; i < N_global + 1; i++) {
         // Start timer
         auto ts = high_resolution_clock::now();
 
@@ -345,6 +345,13 @@ int main(int argc, char** argv) {
     // Source vector
     double b_local[N_local];
     fill_b(b_local, N_local, mype, nprocs);
+
+    // Helpful for debugging
+    // Save each processor's data to a file
+    // char filename[100];
+    // // cout << "Writing output to file..." << endl;
+    // int dummy_var = sprintf(filename, "./output/mype_%d.txt", mype);
+    // write_to_file(b_local, filename, 0, N_local);
 
     // Result vector
     double x_local[N_local];
