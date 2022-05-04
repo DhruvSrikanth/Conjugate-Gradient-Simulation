@@ -1,14 +1,10 @@
 #include <iostream>
 using namespace std;
-
 #include <math.h>
-#include <cmath>
 #include <fstream>
 #include <assert.h>
-
 #include <chrono>
 using namespace std::chrono;
-
 #include <mpi.h>
 
 // Dimension of node arrangement in the MPI grid
@@ -86,7 +82,6 @@ void collect_and_write_array(double *arr_to_collect, string filename, int n_iter
         for (int i = 0; i < N_local; i++) {
             global_out[i] = arr_to_collect[i];
         }
-
         // Every other processor's contribution to the global output
         double local_buffer[N_local];
         for (int proc = 1; proc < nprocs; proc++) {
@@ -99,7 +94,6 @@ void collect_and_write_array(double *arr_to_collect, string filename, int n_iter
         // Write to file
         write_to_file(global_out, filename, n_iter, N_global); 
     }
-
     // For other processors
     else {
         // send to processor 0
@@ -335,19 +329,18 @@ int main(int argc, char** argv) {
 
     // Initialize variables
     int n_global = stoi(argv[1]);
+    // Check whether the physical domain can be divided evenly among the MPI ranks
+    assert(n_global % nprocs == 0);
+    
     string solver_type = argv[2];
     bool p_flag = false;
     if (solver_type == "parallel"){
         p_flag = true;
     }
 
-    // Check whether the physical domain can be divided evenly among the MPI ranks
-    assert(n_global % nprocs == 0);
-
     int N_global = n_global * n_global;
     int N_local = N_global / nprocs;
     int n_local = sqrt(N_local);
-
     
     // Source vector
     double b_local[N_local];
