@@ -4,7 +4,7 @@ GCC = g++-11
 MPI = mpiexec
 
 # Configuration
-NODES = 2
+NODES = 4
 SOLVER_TYPE = "parallel"
 
 # Input to cpp

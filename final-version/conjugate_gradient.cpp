@@ -2,6 +2,7 @@
 using namespace std;
 
 #include <math.h>
+#include <cmath>
 #include <fstream>
 #include <assert.h>
 
@@ -13,8 +14,31 @@ using namespace std::chrono;
 // Dimension of node arrangement in the MPI grid
 #define DIMENSION 1
 
-int global_start (int mype, int N_local) {
-    return mype * N_local;
+bool check_array_elements(double *array, int N) {
+    for (int i = 0; i < N; i++) {
+        // char element[100];
+        // int dummy_var = sprintf(element, "%s", array[i]);
+        // cout << element << " ";
+        // if (element ==  "(null)") {
+        //     cout << "NaN detected at index " << i << endl;
+        //     return false;
+        // }
+
+        if (!array[i]) {
+            cout << "NaN detected at index " << i << endl;
+            return false;
+        } else {
+            cout << "not nan" << endl;
+            cout << "arr[i]: " << array[i] << endl;
+        }
+
+        // cout << "arr[i]: " << array[i] << endl;
+    }
+    return true;
+}
+
+int global_start (int proc, int N_local) {
+    return proc * N_local;
 }
 
 void write_to_file(double *result, string filename, int n_iter, int N) { 
@@ -39,7 +63,7 @@ void write_to_file(double *result, string filename, int n_iter, int N) {
         }
         for (int j = 0; j < n; j++) {
             double res = result[i*n + j];
-            if (j == N - 1) {
+            if (j == n - 1) {
                 file << res;
             } 
             else {
@@ -49,16 +73,12 @@ void write_to_file(double *result, string filename, int n_iter, int N) {
         file << "]";
     }
     file << "]";
-
     // Release the memory for the file
     file.close();
 }
 
 void collect_and_write_array(double *arr_to_collect, string filename, int n_iter, int mype, int N_global, int nprocs, MPI_Comm comm1d) {
     int N_local = N_global / nprocs;
-
-    double local_buffer[N_local];
-
     // For processor 0
     if (mype == 0) {
         // Processor 0's contribution to the global output
@@ -68,6 +88,7 @@ void collect_and_write_array(double *arr_to_collect, string filename, int n_iter
         }
 
         // Every other processor's contribution to the global output
+        double local_buffer[N_local];
         for (int proc = 1; proc < nprocs; proc++) {
             MPI_Recv(local_buffer, N_local, MPI_DOUBLE, proc, 0, comm1d, MPI_STATUS_IGNORE);
             int global_start_index = global_start(proc, N_local);
@@ -82,17 +103,15 @@ void collect_and_write_array(double *arr_to_collect, string filename, int n_iter
     // For other processors
     else {
         // send to processor 0
-        for (int i = 0; i < N_local; i++) {
-            local_buffer[i] = arr_to_collect[i];
-        }
-        MPI_Send(local_buffer, N_local, MPI_DOUBLE, 0, 0, comm1d);
+        MPI_Send(arr_to_collect, N_local, MPI_DOUBLE, 0, 0, comm1d);
     }
 }
 
-double collect_ghost_cell(int idx, int n_global, int mype, int nprocs, MPI_Comm comm1d) {
-    // TODO: Implement this function
-    double ghost_cell = 0;
-    return ghost_cell;
+void distribute_ghost_cells(double *arr_to_distribute, double *left_ghost_cells, double *right_ghost_cells, int N, int left, int right, MPI_Comm comm1d) {
+    // Send and receive ghost cell
+    MPI_Status status;
+    MPI_Sendrecv(arr_to_distribute, N, MPI_DOUBLE, left, 99, &right_ghost_cells, N, MPI_DOUBLE, right, MPI_ANY_TAG, comm1d, &status);
+    MPI_Sendrecv(arr_to_distribute, N, MPI_DOUBLE, right, 99, &left_ghost_cells, N, MPI_DOUBLE, left, MPI_ANY_TAG, comm1d, &status);
 }
 
 double find_b(int i, int j, int n) {
@@ -112,11 +131,18 @@ double find_b(int i, int j, int n) {
 }
 
 void fill_b(double *b, int N, int mype, int nprocs) {
-    // TODO: Fill the b array with the CORRECT values
+    int N_global = N * nprocs;
+    int global_start_index = global_start(mype, N);
     int n = sqrt(N);
+    int n_global = sqrt(N_global);
     for(int i = 0; i < n; i++) {
         for(int j = 0; j < n; j++ ) {
-            b[i*n + j] = find_b(i, j, n);
+            int local_1d = i*n + j;
+            int global_1d = global_start_index + local_1d;
+            int global_i = floor(global_1d / n_global);
+            int global_j = global_1d % n_global;
+            b[local_1d] = find_b(global_i, global_j, n_global);
+            // b[i*n + j] = find_b(i, j, n);
         }
     }
 }
@@ -152,11 +178,11 @@ void axpy(double *output, double alpha, double *v1, double beta, double *v2, int
     }
 }
 
-void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, MPI_Comm comm1d) {
+void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, int left, int right, MPI_Comm comm1d) {
     int N_global = N * nprocs;
     int n_global = sqrt(N_global);
     int n = sqrt(N);
-    int global_start_index = global_start(mype, N);;
+    int global_start_index = global_start(mype, N);
     int global_i;
     for (int i = 0; i < N; i++) {
         double t1 = 0.0;
@@ -164,45 +190,48 @@ void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, MPI_C
         double t3 = 0.0;
         double t4 = 0.0;
         double t5 = 0.0;
+        double left_ghost_cells[N];
+        double right_ghost_cells[N];
+        for (int j = 0; j < N; j++) {
+            left_ghost_cells[j] = 0.0;
+            right_ghost_cells[j] = 0.0;
+        }
+        distribute_ghost_cells(w, left_ghost_cells, right_ghost_cells, N, left, right, comm1d);
         global_i = global_start_index + i;
         t3 = 4*w[i];
         if (i - n >= 0) {
             t1 = w[i - n];
         }
-        else if (global_i - n_global >= 0) {
+        else if (global_i - n >= 0) {
             // get ghost cell w[global_i - n_global]
-            int idx = global_i - n_global;
-            t1 = collect_ghost_cells(idx, n_global, mype, nprocs, comm1d);
+            t1 = left_ghost_cells[N + i - n];
         }
         if (i - 1 >= 0) {
             t2 = w[i - 1];
         }
         else if (global_i - 1 >= 0) {
             // get ghost cell w[global_i - 1]
-            int idx = global_i - 1;
-            t2 = collect_ghost_cells(idx, n_global, mype, nprocs, comm1d);
+            t2 = left_ghost_cells[N + i - 1];
         }
         if (i + 1 < N) {
             t4 = w[i + 1];
         }
         else if (global_i + 1 < N_global) {
             // get ghost cell w[global_i + 1]
-            int idx = global_i + 1;
-            t4 = collect_ghost_cells(idx, n_global, mype, nprocs, comm1d);
+            t4 = right_ghost_cells[i + 1 - N];
         }
         if (i + n < N) {
             t5 = w[i + n];
         }
-        else if (global_i + n_global < N_global) {
+        else if (global_i + n < N_global) {
             // get ghost cell w[global_i + n_global]
-            int idx = global_i + n_global;
-            t5 = collect_ghost_cells(idx, n_global, mype, nprocs, comm1d);
+            t5 = right_ghost_cells[i + n - N];
         }
         v[i] = t3 - t1 - t2 - t4 - t5;
     }
 }
 
-void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, MPI_Comm comm1d) {
+void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int left, int right, MPI_Comm comm1d) {
     // Initialize variables
     int N = n * n;
     int N_global = N * nprocs;
@@ -213,6 +242,7 @@ void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, MPI_C
     // Write RHS to file
     // write_to_file(b, "./output/b.txt", 0, N); // serial
     collect_and_write_array(b, "./output/b.txt", 0, mype, N_global, nprocs, comm1d); // parallel
+    // return ;
 
     double r[N];
     double p[N];
@@ -222,27 +252,27 @@ void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, MPI_C
     double Ax[N]; 
 
     // r = b - Ax
-    poisson_on_the_fly(Ax, x, N, mype, nprocs, comm1d); // needs to be parallelized
+    poisson_on_the_fly(Ax, x, N, mype, nprocs, left, right, comm1d); // needs to be parallelized
     axpy(r, 1.0, b, -1.0, Ax, N);
 
     // p = r
     for (int i = 0; i < N; i++) {
         p[i] = r[i];
     }
-
+    
     // rsold = rT * r
-    double rsold = dotp(r, r, N);
+    double rsold = parallel_dotp(r, r, N, comm1d);
 
     for (int i = 1; i < N + 1; i++) {
         // Start timer
         auto ts = high_resolution_clock::now();
 
         // z = A*p
-        poisson_on_the_fly(z, p, N, mype, nprocs, comm1d); // needs to be parallelized
+        poisson_on_the_fly(z, p, N, mype, nprocs, left, right, comm1d); // needs to be parallelized        
 
         // alpha = rsold / (p*z)
         double alpha = rsold / parallel_dotp(p, z, N, comm1d);
-
+        
         // x = x + alpha*p
         axpy(x, 1.0, x, alpha, p, N);
 
@@ -310,15 +340,8 @@ int main(int argc, char** argv) {
 
     
     // Source vector
-    double b_global[N_global];
-    fill_b(b_global, N_global, mype, nprocs);
-
     double b_local[N_local];
-    // fill_b(b_local, N_local, mype, nprocs);
-    for (int i = 0; i < N_local; i++) {
-        int global_i = global_start(mype, N_local) + i;
-        b_local[i] = b_global[global_i];
-    }
+    fill_b(b_local, N_local, mype, nprocs);
 
     // Result vector
     double x_local[N_local];
@@ -335,7 +358,7 @@ int main(int argc, char** argv) {
     auto s = high_resolution_clock::now();
 
     // Run simulation
-    conjugate_gradient(b_local, x_local, n_local, mype, nprocs, comm1d);
+    conjugate_gradient(b_local, x_local, n_local, mype, nprocs, left, right, comm1d);
 
     // Stop timer
     auto e = high_resolution_clock::now();
