@@ -152,7 +152,7 @@ void conjugate_gradient(double *b, double *x, int n) {
 
     // rsold = rT * r
     double rsold = dotp(r, r, N);
-
+    
     for (int i = 1; i < N + 1; i++) {
         // Start timer
         auto ts = high_resolution_clock::now();

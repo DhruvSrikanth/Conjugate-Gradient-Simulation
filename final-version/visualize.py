@@ -68,6 +68,7 @@ if __name__ == '__main__':
     # generate_plots('./output/mype_3.txt')
     generate_plots('./output/b.txt')
     generate_plots('./output/x.txt')
+    # generate_plots('./output/Ax.txt')
     
 
     if gen_mov:

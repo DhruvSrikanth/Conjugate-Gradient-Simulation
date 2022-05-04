@@ -81,8 +81,16 @@ void collect_and_write_array(double *arr_to_collect, string filename, int n_iter
 void distribute_ghost_cells(double *arr_to_distribute, double *left_ghost_cells, double *right_ghost_cells, int N, int left, int right, MPI_Comm comm1d) {
     // Send and receive ghost cell
     MPI_Status status;
-    MPI_Sendrecv(arr_to_distribute, N, MPI_DOUBLE, left, 99, &right_ghost_cells, N, MPI_DOUBLE, right, MPI_ANY_TAG, comm1d, &status);
-    MPI_Sendrecv(arr_to_distribute, N, MPI_DOUBLE, right, 99, &left_ghost_cells, N, MPI_DOUBLE, left, MPI_ANY_TAG, comm1d, &status);
+    MPI_Sendrecv(arr_to_distribute, N, MPI_DOUBLE, left, 99, right_ghost_cells, N, MPI_DOUBLE, right, MPI_ANY_TAG, comm1d, &status);
+    MPI_Sendrecv(arr_to_distribute, N, MPI_DOUBLE, right, 99, left_ghost_cells, N, MPI_DOUBLE, left, MPI_ANY_TAG, comm1d, &status);
+    
+    // Send to the left and receive from the right
+    // MPI_Send(arr_to_distribute, N, MPI_DOUBLE, left, 99, comm1d);
+    // MPI_Recv(right_ghost_cells, N, MPI_DOUBLE, right, 99, comm1d, MPI_STATUS_IGNORE);
+
+    // // // Send to the right and receive from the left
+    // MPI_Send(arr_to_distribute, N, MPI_DOUBLE, right, 99, comm1d);
+    // MPI_Recv(left_ghost_cells, N, MPI_DOUBLE, left, 99, comm1d, MPI_STATUS_IGNORE);
 }
 
 double find_b(int i, int j, int n) {
@@ -164,7 +172,6 @@ void poisson_on_the_fly(double *v, double *w, int N, int mype, int nprocs, int l
         initialize_array(right_ghost_cells, N);
         distribute_ghost_cells(w, left_ghost_cells, right_ghost_cells, N, left, right, comm1d);
     }
-
     for (int i = 0; i < N; i++) {
         // Terms to compute vector values "on the fly"
         double t1 = 0.0;
@@ -239,7 +246,7 @@ void conjugate_gradient(double *b, double *x, int n, int mype, int nprocs, int l
     
     // rsold = rT * r
     double rsold = parallel_dotp(r, r, N, comm1d);
-
+    
     for (int i = 1; i < N_global + 1; i++) {
         // Start timer
         auto ts = high_resolution_clock::now();
