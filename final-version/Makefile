@@ -8,7 +8,7 @@ NODES = 4
 SOLVER_TYPE = "parallel"
 
 # Input to cpp
-n = 80
+n = 200
 
 # Checks
 VISUALIZE = "true"

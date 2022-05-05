@@ -1,0 +1,20 @@
+#!/bin/bash
+
+#SBATCH --job-name=dhruvsrikanth-hpc
+#SBATCH --output=batch_file.stdout
+#SBATCH --error=batch_file.stderr
+#SBATCH --time=00:15:00
+#SBATCH --partition=caslake
+#SBATCH --exclusive
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=2000
+
+module load openmpi
+mpic++ conjugate_gradient.cpp -o conjugate_gradient.out -O3 -ffast-math -march=native -mtune=native -lmpi
+
+mpiexec --bind-to none --report-bindings conjugate_gradient.out 2560 parallel
+
+rm conjugate_gradient.out
+
