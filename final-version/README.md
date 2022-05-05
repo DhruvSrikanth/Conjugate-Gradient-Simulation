@@ -200,6 +200,10 @@ For reasons that I cover in the weak scaling analysis, through the timings were 
 
 ### Strong Scaling
 
+Input - 
+
+n = 2560
+
 Data - 
 
 | Number of MPI ranks   | Grind Rate (iter/s)
