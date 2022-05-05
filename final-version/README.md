@@ -1,5 +1,9 @@
 # Project 2 - Sparse Linear Solver (Conjugate Gradient Method)
 
+## Information:
+```
+Name: Dhruv Srikanth
+```
 ## Local System Information:
 ### Processor:
 
